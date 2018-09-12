@@ -4,6 +4,7 @@ import android.text.TextUtils;
 import android.widget.Toast;
 
 import com.telink.TelinkApplication;
+import com.telink.bluetooth.TelinkLog;
 import com.telink.bluetooth.light.ConnectionStatus;
 
 import java.text.SimpleDateFormat;
@@ -66,8 +67,8 @@ public class TelinkMyApplication extends TelinkApplication {
         String fileName = "telink-";
         fileName += System.currentTimeMillis();
         fileName += ".log";
-//        TelinkLog.LOG2FILE_ENABLE = false;
-//        TelinkLog.onCreate(fileName);
+        TelinkLog.LOG2FILE_ENABLE = false;
+        TelinkLog.onCreate(fileName);
         super.doInit();
         //AES.Security = true;
 
@@ -83,23 +84,18 @@ public class TelinkMyApplication extends TelinkApplication {
             Mesh mesh = getMesh();
             setupMesh(mesh);
         }
-
-
 /*
-
         if (FileSystem.exists("telink.meshs")) {
             this.mesh = (Mesh) FileSystem.readAsObject("telink.meshs");
         }
 */
-
-
         //启动LightService
         this.startLightService(TelinkLightService.class);
     }
 
     @Override
     public void doDestroy() {
-//        TelinkLog.onDestroy();
+        TelinkLog.onDestroy();
         super.doDestroy();
     }
 
@@ -146,7 +142,6 @@ public class TelinkMyApplication extends TelinkApplication {
 
 
     public boolean isEmptyMesh() {
-
         return this.mesh == null || TextUtils.isEmpty(mesh.name) || TextUtils.isEmpty(mesh.password);
     }
 

@@ -192,28 +192,28 @@ public class TempTestActivity extends TelinkBaseActivity implements EventListene
             for (OnlineStatusNotificationParser.DeviceNotificationInfo info : notificationInfoList) {
                 if (info.meshAddress == address) {
 //                    notifyCount++;
-                    switch (info.connectStatus) {
-                        case ON:
-                            onNfCnt++;
-                            updateUI(false);
-//                            appendLog("notify: on " + onNfCnt + "\n");
-                            break;
-                        case OFF:
-                            offNfCnt++;
-                            updateUI(false);
-//                            appendLog("notify: off " + offNfCnt + "\n");
-                            break;
-                        case OFFLINE:
-                            offlineNfCnt++;
-                            updateUI(false);
-//                            appendLog("notify: offline " + offlineNfCnt + "\n");
-                            break;
-                    }
+//                    switch (info.connectStatus) {
+//                        case ON:
+//                            onNfCnt++;
+//                            updateUI(false);
+////                            appendLog("notify: on " + onNfCnt + "\n");
+//                            break;
+//                        case OFF:
+//                            offNfCnt++;
+//                            updateUI(false);
+////                            appendLog("notify: off " + offNfCnt + "\n");
+//                            break;
+//                        case OFFLINE:
+//                            offlineNfCnt++;
+//                            updateUI(false);
+////                            appendLog("notify: offline " + offlineNfCnt + "\n");
+//                            break;
+//                    }
                 }
             }
 
         } else if (event.getType().equals(DeviceEvent.STATUS_CHANGED)) {
-            refreshAdrInfo();
+//            refreshAdrInfo();
             final int status = ((DeviceEvent) event).getArgs().status;
             runOnUiThread(new Runnable() {
                 @Override

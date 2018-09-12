@@ -1,20 +1,32 @@
 package worker.seedmorn.com.telinkdemo0827.ui;
 
+import android.Manifest;
 import android.app.AlertDialog;
+import android.bluetooth.BluetoothAdapter;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
+import android.support.v4.app.ActivityCompat;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.telink.bluetooth.LeBluetooth;
 import com.telink.bluetooth.TelinkLog;
 import com.telink.bluetooth.event.DeviceEvent;
 import com.telink.bluetooth.event.LeScanEvent;
 import com.telink.bluetooth.event.MeshEvent;
 import com.telink.bluetooth.event.NotificationEvent;
+import com.telink.bluetooth.event.ServiceEvent;
 import com.telink.bluetooth.light.ConnectionStatus;
 import com.telink.bluetooth.light.DeviceInfo;
 import com.telink.bluetooth.light.LeScanParameters;
@@ -28,12 +40,12 @@ import java.util.List;
 import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
+import worker.seedmorn.com.telinkdemo0827.ErrorReportEvent;
 import worker.seedmorn.com.telinkdemo0827.IMeshView;
 import worker.seedmorn.com.telinkdemo0827.R;
 import worker.seedmorn.com.telinkdemo0827.app.TelinkMyApplication;
 import worker.seedmorn.com.telinkdemo0827.model.Light;
 import worker.seedmorn.com.telinkdemo0827.model.Lights;
-import worker.seedmorn.com.telinkdemo0827.model.Mesh;
 import worker.seedmorn.com.telinkdemo0827.model.SharedPreferencesHelper;
 import worker.seedmorn.com.telinkdemo0827.presenter.MeshPresenter;
 import worker.seedmorn.com.telinkdemo0827.server.TelinkLightService;
@@ -51,6 +63,7 @@ public class MainActivity extends TelinkBaseActivity implements IMeshView, Event
     private MeshPresenter mMeshPresenter;
     private TelinkMyApplication mApplication;
     private static final int UPDATE_LIST = 0;
+    private static final String DEFAULT_NAME = "telink_mesh1";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -60,18 +73,72 @@ public class MainActivity extends TelinkBaseActivity implements IMeshView, Event
         init();
     }
 
+    int PERMISSION_REQUEST_CODE = 0x10;
+
+    private void checkPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+                    != PackageManager.PERMISSION_GRANTED) {
+
+                if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.READ_CONTACTS)) {
+                    // 显示解释权限用途的界面，然后再继续请求权限
+                } else {
+                    // 没有权限，直接请求权限
+                    ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_CONTACTS},
+                            PERMISSION_REQUEST_CODE);
+                }
+            }
+        }
+
+    }
+
+
     private void init() {
         this.mApplication = (TelinkMyApplication) this.getApplication();
         //监听事件
-        this.mApplication = (TelinkMyApplication) this.getApplication();
-        this.mApplication.addEventListener(LeScanEvent.LE_SCAN, this);
-        this.mApplication.addEventListener(LeScanEvent.LE_SCAN_TIMEOUT, this);
-        this.mApplication.addEventListener(LeScanEvent.LE_SCAN_COMPLETED, this);
-        this.mApplication.addEventListener(DeviceEvent.STATUS_CHANGED, this);
-        this.mApplication.addEventListener(MeshEvent.UPDATE_COMPLETED, this);
-        this.mApplication.addEventListener(MeshEvent.ERROR, this);
-        mMeshPresenter = new MeshPresenter(this, this);
+        mMeshPresenter = new MeshPresenter(this, this, mApplication);
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);
+        filter.setPriority(IntentFilter.SYSTEM_HIGH_PRIORITY - 1);
+        registerReceiver(mReceiver, filter);
+        checkPermission();
+        this.mApplication.doInit();//初始化 mes
+
     }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        this.mApplication.addEventListener(DeviceEvent.STATUS_CHANGED, this);
+        this.mApplication.addEventListener(NotificationEvent.ONLINE_STATUS, this);
+        this.mApplication.addEventListener(NotificationEvent.GET_ALARM, this);
+        this.mApplication.addEventListener(NotificationEvent.GET_DEVICE_STATE, this);
+        this.mApplication.addEventListener(ServiceEvent.SERVICE_CONNECTED, this);
+        this.mApplication.addEventListener(MeshEvent.OFFLINE, this);
+        this.mApplication.addEventListener(ErrorReportEvent.ERROR_REPORT, this);
+    }
+
+    private BroadcastReceiver mReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (BluetoothAdapter.ACTION_STATE_CHANGED.equals(action)) {
+                int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, 0);
+
+                switch (state) {
+                    case BluetoothAdapter.STATE_ON:
+                        Log.d(TAG, "蓝牙开启");
+                        TelinkLightService.Instance().idleMode(true);
+//                        autoConnect();
+                        break;
+                    case BluetoothAdapter.STATE_OFF:
+                        Log.d(TAG, "蓝牙关闭");
+                        break;
+                }
+            }
+        }
+    };
+
 
     @OnClick({R.id.btn_create_mash, R.id.btn_search, R.id.btn_connect})
     public void onViewClicked(View view) {
@@ -80,11 +147,18 @@ public class MainActivity extends TelinkBaseActivity implements IMeshView, Event
                 mMeshPresenter.showCreateMeshDialog();
                 break;
             case R.id.btn_search:
+                TelinkLightService.Instance().idleMode(true);
                 if ("".equals(SharedPreferencesHelper.getMeshName(this)) || "".equals(SharedPreferencesHelper.getMeshName(this))) {
                     Toast.makeText(this, " mesh name or password can not be empty", Toast.LENGTH_LONG).show();
                     return;
                 }
-                this.startScan(0);
+                if (mApplication.isEmptyMesh()) {
+                    finish();
+                    Toast.makeText(mApplication, "mesh info null", Toast.LENGTH_SHORT).show();
+//            showToast("mesh info null!");
+                    return;
+                }
+                startActivity(new Intent(this, ScanActivity.class));
                 break;
             case R.id.btn_connect:
                 break;
@@ -96,17 +170,16 @@ public class MainActivity extends TelinkBaseActivity implements IMeshView, Event
     }
 
     @Override
-    public void updateTip() {
+    public void updateTip() {//h 和 启动 server
         StringBuilder tipBuilder = new StringBuilder();
         tipBuilder.append("当前 mesh:  " + SharedPreferencesHelper.getMeshName(this));
         tipBuilder.append("\n当前密码:  " + SharedPreferencesHelper.getMeshPassword(this));
         tvContent.setText(tipBuilder.toString());
-        this.mApplication.doInit();//初始化 mesh 和 启动 server
     }
 
     @Override
     public void performed(Event<String> event) {
-        Log.i(TAG, "performed: ----〉" + event.getType() + "   " + ((NotificationEvent) event).getArgs());
+        Log.v("performed", "performed: ----〉" + event.getType() + "   ");
         switch (event.getType()) {
             case LeScanEvent.LE_SCAN:
 //                this.onLeScan((LeScanEvent) event);
@@ -121,16 +194,49 @@ public class MainActivity extends TelinkBaseActivity implements IMeshView, Event
                 Log.i(TAG, "le_scan_completed: " + event);
                 break;
             case DeviceEvent.STATUS_CHANGED:
-                this.onDeviceStatusChanged((DeviceEvent) event);
+                DeviceInfo deviceInfo = ((DeviceEvent) event).getArgs();
+                int state = deviceInfo.status;
+                if (state == LightAdapter.STATUS_CONNECTED) {
+                    Log.i(TAG, "status_connected: " + event);
+//                    onConnected(deviceInfo);
+                } else if (state == LightAdapter.STATUS_LOGIN) {
+                    Log.i(TAG, "status_login: " + event);
+
+//                    onLogin(deviceInfo);
+                } else if (state == LightAdapter.STATUS_LOGOUT) {
+                    Log.i(TAG, "status_logout: " + event);
+
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+//                            btn_back.setEnabled(true);
+                        }
+                    });
+                } else if (state == LightAdapter.STATUS_UPDATE_MESH_COMPLETED) {
+//                    if (!updateComplete) {
+//                        delayHandler.removeCallbacks(resetCompleteTask);
+//                        delayHandler.postDelayed(resetCompleteTask, COMPLETE_DELAY);
+//                    }
+                }
                 break;
 
             case MeshEvent.UPDATE_COMPLETED:
-                this.startScan(1000);
+                this.startScan();
                 break;
             case MeshEvent.ERROR:
                 this.onMeshEvent((MeshEvent) event);
                 break;
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        Log.i(TAG, "onDestroy: ");
+        this.mApplication.removeEventListener(this);
+        Lights.getInstance().clear();
+        this.mApplication.doDestroy();
+        unregisterReceiver(mReceiver);
     }
 
     private void onMeshEvent(MeshEvent event) {
@@ -258,23 +364,60 @@ public class MainActivity extends TelinkBaseActivity implements IMeshView, Event
     /**
      * 开始扫描
      */
-    private void startScan(int delay) {
-//        scanedList.clear();
+    private void startScan() {
+
         TelinkLightService.Instance().idleMode(true);
-        this.mHandler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                if (mApplication.isEmptyMesh())
-                    return;
-                Mesh mesh = mApplication.getMesh();
-                //扫描参数
-                LeScanParameters params = LeScanParameters.create();
-                params.setMeshName("telink_mesh1");
-                params.setOutOfMeshName("telink_mesh1");
-                params.setTimeoutSeconds(10);
-                params.setScanMode(false);
-                TelinkLightService.Instance().startScan(params);
-            }
-        }, delay);
+
+        if (mApplication.isEmptyMesh())
+            return;
+
+        //扫描参数
+        LeScanParameters params = LeScanParameters.create();
+        params.setMeshName(DEFAULT_NAME);
+        params.setOutOfMeshName(DEFAULT_NAME);
+        params.setTimeoutSeconds(10);
+        params.setScanMode(true);
+//        params.setScanTypeFilter(0x00);
+        Log.i("scan", "startScan: " + DEFAULT_NAME + "" + DEFAULT_NAME);
+        TelinkLightService.Instance().startScan(params);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (!LeBluetooth.getInstance().isSupport(this)) {
+            Toast.makeText(this, " ble not support", Toast.LENGTH_SHORT).show();
+            finish();
+            return;
+        }
+        if (!LeBluetooth.getInstance().isEnabled()) {
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+
+
+            builder.setMessage("开启蓝牙，体验智能灯!");
+            builder.setNeutralButton("cancel", new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialog, int which) {
+                    finish();
+                }
+            });
+            builder.setNegativeButton("enable", new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialog, int which) {
+                    LeBluetooth.getInstance().enable(getApplicationContext());
+                }
+            });
+            builder.show();
+        }
+        DeviceInfo deviceInfo = this.mApplication.getConnectDevice();
+        if (null != deviceInfo)
+            this.connectMeshAddress = this.mApplication.getConnectDevice().meshAddress & 0xFF;
+
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        TelinkLightService.Instance().disableAutoRefreshNotify();
     }
 }

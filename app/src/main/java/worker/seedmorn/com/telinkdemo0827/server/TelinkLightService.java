@@ -3,6 +3,7 @@ package worker.seedmorn.com.telinkdemo0827.server;
 import android.content.Intent;
 import android.os.Binder;
 import android.os.IBinder;
+import android.util.Log;
 
 import com.telink.bluetooth.light.LightAdapter;
 import com.telink.bluetooth.light.LightService;
@@ -33,6 +34,7 @@ public class TelinkLightService extends LightService {
         if (this.mAdapter == null)
             this.mAdapter = new LightAdapter();
         this.mAdapter.start(this);
+        Log.i("performed", "onCreate: TelinkLightService");
     }
 
     public class LocalBinder extends Binder {
